@@ -98,7 +98,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         } catch (Exception $e) {
             $pdo->rollBack();
-            $errors[] = 'Failed to save ticket: ' . htmlspecialchars($e->getMessage());
+            error_log('create_ticket error: ' . $e->getMessage());
+            $errors[] = 'Failed to save ticket. Please try again.';
         }
     }
 

@@ -4,6 +4,7 @@
  * Accepts POST only. Redirects back to view_ticket.php after processing.
  */
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/config.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: index.php');
@@ -19,8 +20,13 @@ $approver_name = isset($_POST['approver_name']) ? trim($_POST['approver_name']) 
 $approver_role = isset($_POST['approver_role']) ? trim($_POST['approver_role'])  : '';
 $comments      = isset($_POST['comments'])      ? trim($_POST['comments'])       : '';
 
+// Sanitize text inputs — strip tags and limit length
+$approver_name = mb_substr(strip_tags($approver_name), 0, 100);
+$approver_role = mb_substr(strip_tags($approver_role), 0, 100);
+$comments      = mb_substr(strip_tags($comments),      0, 1000);
+
 // Validate action
-if (!in_array($action, ['approved', 'rejected'], true)) {
+if (!in_array($action, [ACTION_APPROVED, ACTION_REJECTED], true)) {
     header('Location: view_ticket.php?id=' . $ticket_id . '&error=invalid_action');
     exit;
 }
@@ -96,12 +102,12 @@ try {
     $all_stmt->execute([$ticket_id]);
     $all_actions = $all_stmt->fetchAll(PDO::FETCH_COLUMN);
 
-    if (in_array('rejected', $all_actions, true)) {
-        $new_status = 'rejected';
-    } elseif (in_array('pending', $all_actions, true)) {
-        $new_status = 'partially_approved';
+    if (in_array(ACTION_REJECTED, $all_actions, true)) {
+        $new_status = STATUS_REJECTED;
+    } elseif (in_array(ACTION_PENDING, $all_actions, true)) {
+        $new_status = STATUS_PARTIALLY_APPROVED;
     } else {
-        $new_status = 'approved'; // all approved
+        $new_status = STATUS_APPROVED; // all approved
     }
 
     $pdo->prepare("UPDATE scrap_tickets SET status = ? WHERE id = ?")
@@ -113,6 +119,7 @@ try {
 
 } catch (Exception $e) {
     $pdo->rollBack();
-    header('Location: view_ticket.php?id=' . $ticket_id . '&error=' . urlencode($e->getMessage()));
+    error_log('approve_ticket error: ' . $e->getMessage());
+    header('Location: view_ticket.php?id=' . $ticket_id . '&error=server_error');
     exit;
 }

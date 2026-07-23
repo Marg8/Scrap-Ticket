@@ -4,7 +4,7 @@ require_once __DIR__ . '/db.php';
 $pdo = get_db();
 
 // Filters
-$status_filter = isset($_GET['status']) && in_array($_GET['status'], ['pending','approved','rejected','partially_approved'])
+$status_filter = isset($_GET['status']) && in_array($_GET['status'], [STATUS_PENDING, STATUS_APPROVED, STATUS_REJECTED, STATUS_PARTIALLY_APPROVED], true)
     ? $_GET['status'] : '';
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 

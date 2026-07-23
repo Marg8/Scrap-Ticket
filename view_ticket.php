@@ -140,7 +140,7 @@ $error_flash    = isset($_GET['error'])    ? htmlspecialchars($_GET['error']) : 
                 // Determine which level is "active" (first pending after all approved)
                 $active_level_order = null;
                 foreach ($approvals as $ap) {
-                    if ($ap['action'] === 'pending') {
+                    if ($ap['action'] === ACTION_PENDING) {
                         $active_level_order = $ap['level_order'];
                         break;
                     }
@@ -184,9 +184,9 @@ $error_flash    = isset($_GET['error'])    ? htmlspecialchars($_GET['error']) : 
                             <?php
                             // Show action form only for the currently active (pending) level
                             // and only if the ticket is not fully approved/rejected
-                            $can_act = ($ap['action'] === 'pending')
+                            $can_act = ($ap['action'] === ACTION_PENDING)
                                     && ($ap['level_order'] === $active_level_order)
-                                    && !in_array($ticket['status'], ['approved','rejected']);
+                                    && !in_array($ticket['status'], [STATUS_APPROVED, STATUS_REJECTED], true);
                             ?>
                             <?php if ($can_act): ?>
                                 <form method="post" action="approve_ticket.php" style="margin-top:10px;background:var(--light);padding:12px;border-radius:var(--radius);">

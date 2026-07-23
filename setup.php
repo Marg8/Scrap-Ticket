@@ -98,7 +98,8 @@ try {
     $messages[] = 'Table "approvals" ready.';
 
 } catch (PDOException $e) {
-    $errors[] = 'Database error: ' . htmlspecialchars($e->getMessage());
+    error_log('setup.php error: ' . $e->getMessage());
+    $errors[] = 'A database error occurred. Please check your configuration and server logs.';
 }
 
 ?>
