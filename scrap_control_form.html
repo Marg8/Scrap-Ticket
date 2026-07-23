@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Formato de Control de Scrap</title>
+  <style>
+    :root {
+      --line: #222;
+      --bg: #fff;
+      --text: #111;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 16px;
+      background: #f1f1f1;
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 11px;
+      line-height: 1.2;
+    }
+
+    .sheet {
+      width: 1180px;
+      margin: 0 auto;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 3px 5px;
+      vertical-align: middle;
+      font-weight: 400;
+    }
+
+    .meta td {
+      height: 28px;
+    }
+
+    .logo {
+      width: 34%;
+      text-align: left;
+      padding: 6px 8px;
+    }
+
+    .logo .brand {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }
+
+    .logo .company {
+      display: block;
+      margin-top: 2px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    .meta-label {
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-right: 4px;
+    }
+
+    .center {
+      text-align: center;
+    }
+
+    .left {
+      text-align: left;
+    }
+
+    .right {
+      text-align: right;
+    }
+
+    .main th {
+      font-weight: 700;
+      text-align: center;
+      text-transform: none;
+      height: 30px;
+    }
+
+    .main td {
+      height: 24px;
+    }
+
+    .rownum {
+      text-align: center;
+      width: 42px;
+    }
+
+    .pn {
+      width: 130px;
+      text-align: left;
+    }
+
+    .desc {
+      width: 350px;
+      text-align: left;
+    }
+
+    .um {
+      width: 58px;
+      text-align: center;
+    }
+
+    .unit {
+      width: 125px;
+      text-align: right;
+    }
+
+    .total {
+      width: 120px;
+      text-align: right;
+    }
+
+    .qty {
+      width: 115px;
+      text-align: right;
+    }
+
+    .scrap {
+      width: 240px;
+      text-align: left;
+    }
+
+    .totals td {
+      height: 28px;
+      font-weight: 700;
+    }
+
+    .approvals-wrap {
+      border-top: 1px solid var(--line);
+    }
+
+    .approvals {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    .approvals th,
+    .approvals td {
+      border: 1px solid var(--line);
+      padding: 6px 8px;
+      vertical-align: top;
+    }
+
+    .approvals th {
+      text-align: center;
+      font-weight: 700;
+    }
+
+    .approvals .title-cell {
+      font-weight: 700;
+      text-align: left;
+    }
+
+    .signatures {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      height: 100%;
+    }
+
+    .sig-block {
+      min-height: 66px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+    }
+
+    .sig-label {
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+
+    .sig-line {
+      border-bottom: 1px solid var(--line);
+      height: 18px;
+      margin-bottom: 5px;
+    }
+
+    .sig-role {
+      font-size: 10px;
+      text-align: center;
+      text-transform: none;
+    }
+
+    @media (max-width: 1240px) {
+      body {
+        padding: 8px;
+      }
+
+      .sheet {
+        width: 100%;
+        overflow-x: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <table class="meta" aria-label="Encabezado del formato">
+      <colgroup>
+        <col style="width:34%">
+        <col style="width:15%">
+        <col style="width:15%">
+        <col style="width:11%">
+        <col style="width:10%">
+        <col style="width:10%">
+        <col style="width:5%">
+      </colgroup>
+      <tr>
+        <td class="logo" rowspan="2">
+          <span class="brand">Littelfuse</span>
+          <span class="company">Productos Electromecánicos BAC, S. de R.L. de C.V.</span>
+        </td>
+        <td class="center"><span class="meta-label">Área:</span>CONTACTORES</td>
+        <td class="center"><span class="meta-label">Responsable:</span>EMMA REQUENA</td>
+        <td class="center"><span class="meta-label">No Parte:</span>1&amp;2POLOS</td>
+        <td class="center"><span class="meta-label">Fecha:</span>15/07/20</td>
+        <td class="center"><span class="meta-label">Folio:</span></td>
+        <td class="center"><span class="meta-label">HOJA:</span>5</td>
+      </tr>
+      <tr>
+        <td class="center"></td>
+        <td class="center"></td>
+        <td class="center"></td>
+        <td class="center"></td>
+        <td class="center"></td>
+        <td class="center"></td>
+      </tr>
+    </table>
+
+    <table class="main" aria-label="Tabla principal de scrap">
+      <colgroup>
+        <col style="width:42px">
+        <col style="width:130px">
+        <col style="width:350px">
+        <col style="width:58px">
+        <col style="width:125px">
+        <col style="width:120px">
+        <col style="width:115px">
+        <col style="width:240px">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Número de parte</th>
+          <th>Descripción</th>
+          <th>U/M</th>
+          <th>Costo unitario</th>
+          <th>Costo total</th>
+          <th>Cantidad total</th>
+          <th>Código de Scrap</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="rownum">1</td>
+          <td class="pn">1003606</td>
+          <td class="desc">BRIDGE, 3P &amp; 4P, 20-40 AMP</td>
+          <td class="um">EA</td>
+          <td class="unit">$ 0.02753</td>
+          <td class="total">$ 27.53</td>
+          <td class="qty">1,000</td>
+          <td class="scrap">WIP C63AL</td>
+        </tr>
+        <tr>
+          <td class="rownum">2</td>
+          <td class="pn">1006388</td>
+          <td class="desc">Bridge Contact, AgNiW</td>
+          <td class="um">EA</td>
+          <td class="unit">$ 0.16695</td>
+          <td class="total">$ 333.90</td>
+          <td class="qty">2,000</td>
+          <td class="scrap">WIP C63AL</td>
+        </tr>
+        <tr>
+          <td class="rownum">3</td>
+          <td class="pn">1003606</td>
+          <td class="desc">BRIDGE, 3P &amp; 4P, 20-40 AMP</td>
+          <td class="um">EA</td>
+          <td class="unit">$ 0.02753</td>
+          <td class="total">$ 27.53</td>
+          <td class="qty">1,000</td>
+          <td class="scrap">WIP C62AL</td>
+        </tr>
+        <tr>
+          <td class="rownum">4</td>
+          <td class="pn">1006388</td>
+          <td class="desc">Bridge Contact, AgNiW</td>
+          <td class="um">EA</td>
+          <td class="unit">$ 0.16695</td>
+          <td class="total">$ 333.90</td>
+          <td class="qty">2,000</td>
+          <td class="scrap">WIP C62AL</td>
+        </tr>
+        <tr>
+          <td class="rownum">5</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap">WIP</td>
+        </tr>
+        <tr>
+          <td class="rownum">6</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap">WIP</td>
+        </tr>
+        <tr>
+          <td class="rownum">7</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap">WIP</td>
+        </tr>
+        <tr>
+          <td class="rownum">8</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap">WIP</td>
+        </tr>
+        <tr>
+          <td class="rownum">9</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap">WIP</td>
+        </tr>
+        <tr>
+          <td class="rownum">10</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap">WIP</td>
+        </tr>
+        <tr>
+          <td class="rownum">11</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap"></td>
+        </tr>
+        <tr>
+          <td class="rownum">12</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap"></td>
+        </tr>
+        <tr>
+          <td class="rownum">13</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap"></td>
+        </tr>
+        <tr>
+          <td class="rownum">14</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap"></td>
+        </tr>
+        <tr>
+          <td class="rownum">15</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap"></td>
+        </tr>
+        <tr>
+          <td class="rownum">16</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap"></td>
+        </tr>
+        <tr>
+          <td class="rownum">17</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap"></td>
+        </tr>
+        <tr>
+          <td class="rownum">18</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap"></td>
+        </tr>
+        <tr>
+          <td class="rownum">19</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap"></td>
+        </tr>
+        <tr>
+          <td class="rownum">20</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap"></td>
+        </tr>
+        <tr>
+          <td class="rownum">21</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap"></td>
+        </tr>
+        <tr>
+          <td class="rownum">22</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap"></td>
+        </tr>
+        <tr>
+          <td class="rownum">23</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap"></td>
+        </tr>
+        <tr>
+          <td class="rownum">24</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap"></td>
+        </tr>
+        <tr>
+          <td class="rownum">25</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap"></td>
+        </tr>
+        <tr>
+          <td class="rownum">26</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap"></td>
+        </tr>
+        <tr>
+          <td class="rownum">27</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap"></td>
+        </tr>
+        <tr>
+          <td class="rownum">28</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap"></td>
+        </tr>
+        <tr>
+          <td class="rownum">29</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap"></td>
+        </tr>
+        <tr>
+          <td class="rownum">30</td><td class="pn"></td><td class="desc"></td><td class="um">EA</td><td class="unit"></td><td class="total"></td><td class="qty"></td><td class="scrap"></td>
+        </tr>
+      </tbody>
+      <tfoot>
+        <tr class="totals">
+          <td class="rownum"></td>
+          <td class="pn"></td>
+          <td class="desc right">Total</td>
+          <td class="um"></td>
+          <td class="unit"></td>
+          <td class="total">$ 722.86</td>
+          <td class="qty">6000</td>
+          <td class="scrap"></td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <div class="approvals-wrap">
+      <table class="approvals" aria-label="Sección de firmas y aprobaciones">
+        <colgroup>
+          <col style="width:38%">
+          <col style="width:30%">
+          <col style="width:32%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Aprobador 1</th>
+            <th>Límite de aprobaciones</th>
+            <th>Firmas</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="title-cell">Gerente de Operaciones</td>
+            <td>$0 - $2,500 USD</td>
+            <td rowspan="3">
+              <div class="signatures">
+                <div class="sig-block">
+                  <div class="sig-label">Firma Aprobador 1</div>
+                  <div class="sig-line"></div>
+                  <div class="sig-role">Contralor</div>
+                </div>
+                <div class="sig-block">
+                  <div class="sig-label">Firma Aprobador 2</div>
+                  <div class="sig-line"></div>
+                  <div class="sig-role">Contralor Regional</div>
+                </div>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td class="title-cell">Gerente de Planta</td>
+            <td>$2,501 - $15,000 USD</td>
+          </tr>
+          <tr>
+            <td class="title-cell">Vicepresidente de unidad de negocio</td>
+            <td>Aprobar el total mensual del sitio</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>

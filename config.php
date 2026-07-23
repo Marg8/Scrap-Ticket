@@ -2,8 +2,8 @@
 // Database configuration
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'scrap_tickets_db');
-define('DB_USER', 'root');
-define('DB_PASS', '');
+define('DB_USER', 'scrap_user');
+define('DB_PASS', 'scrap_pass');
 define('DB_CHARSET', 'utf8mb4');
 
 // Application settings

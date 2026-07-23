@@ -3,17 +3,17 @@
    =================================================== */
 
 :root {
-    --primary:      #1a73e8;
-    --primary-dark: #1558b0;
-    --success:      #28a745;
+    --primary:      #2e7d32;
+    --primary-dark: #1b5e20;
+    --success:      #388e3c;
     --danger:       #dc3545;
-    --warning:      #fd7e14;
-    --info:         #17a2b8;
-    --light:        #f8f9fa;
-    --dark:         #343a40;
-    --border:       #dee2e6;
+    --warning:      #f59e0b;
+    --info:         #0f766e;
+    --light:        #f1f8f1;
+    --dark:         #1f2937;
+    --border:       #d6e7d8;
     --text:         #212529;
-    --muted:        #6c757d;
+    --muted:        #4b6351;
     --radius:       6px;
     --shadow:       0 2px 8px rgba(0,0,0,.12);
 }
@@ -24,7 +24,7 @@ body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     font-size: 14px;
     color: var(--text);
-    background: #eef2f7;
+    background: #edf5ee;
     line-height: 1.5;
 }
 
@@ -110,7 +110,7 @@ label { display: block; font-weight: 500; margin-bottom: 4px; }
 .form-control:focus {
     border-color: var(--primary);
     outline: none;
-    box-shadow: 0 0 0 3px rgba(26,115,232,.18);
+    box-shadow: 0 0 0 3px rgba(46,125,50,.18);
 }
 textarea.form-control { resize: vertical; min-height: 72px; }
 .form-hint { font-size: 12px; color: var(--muted); margin-top: 3px; }
@@ -123,7 +123,7 @@ table { width: 100%; border-collapse: collapse; }
 thead { background: var(--light); }
 th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
 th { font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
-tbody tr:hover { background: #f5f8ff; }
+tbody tr:hover { background: #eef8ef; }
 
 /* ── Badges / Status ────────────────────────────── */
 .badge {
@@ -137,7 +137,7 @@ tbody tr:hover { background: #f5f8ff; }
 .badge-pending             { background: #fff3cd; color: #856404; }
 .badge-approved            { background: #d1e7dd; color: #155724; }
 .badge-rejected            { background: #f8d7da; color: #721c24; }
-.badge-partially_approved  { background: #cfe2ff; color: #084298; }
+.badge-partially_approved  { background: #dff3e1; color: #1f6f37; }
 
 /* ── Alerts ─────────────────────────────────────── */
 .alert {
