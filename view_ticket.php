@@ -22,6 +22,20 @@ if (!$ticket) {
     exit;
 }
 
+// Fetch line items; fall back to the legacy single-item columns for old tickets.
+$istmt = $pdo->prepare('SELECT * FROM ticket_items WHERE ticket_id = ? ORDER BY id ASC');
+$istmt->execute([$id]);
+$items = $istmt->fetchAll();
+if (empty($items) && !empty($ticket['part_number'])) {
+    $items = [[
+        'part_number' => $ticket['part_number'],
+        'description' => $ticket['description'],
+        'qty'         => $ticket['qty'],
+        'unit_cost'   => $ticket['unit_cost'],
+        'amount'      => $ticket['amount'],
+    ]];
+}
+
 // Fetch approvals joined with DOA level info, ordered by level
 $stmt = $pdo->prepare("
     SELECT a.*, d.level_name, d.level_order, d.approver_role AS doa_role, d.min_amount, d.max_amount
@@ -47,10 +61,11 @@ $error_flash    = isset($_GET['error'])    ? htmlspecialchars($_GET['error']) : 
 </head>
 <body>
 
-<nav class="navbar">
-    <a class="brand" href="index.php">🏷️ <?= htmlspecialchars(APP_NAME) ?></a>
-    <a class="nav-link" href="index.php">← Ticket List</a>
-</nav>
+<?php
+$active_page   = 'index';
+$page_subtitle = 'Ticket ' . $ticket['ticket_number'];
+require __DIR__ . '/partials/header.php';
+?>
 
 <div class="container" style="max-width:860px;">
 
@@ -95,16 +110,8 @@ $error_flash    = isset($_GET['error'])    ? htmlspecialchars($_GET['error']) : 
                     <div class="value"><?= htmlspecialchars($ticket['line']) ?></div>
                 </div>
                 <div class="detail-item">
-                    <label>Part Number</label>
-                    <div class="value"><?= htmlspecialchars($ticket['part_number']) ?></div>
-                </div>
-                <div class="detail-item">
-                    <label>Quantity (Qty)</label>
-                    <div class="value"><?= number_format((float)$ticket['qty'], 2) ?></div>
-                </div>
-                <div class="detail-item">
-                    <label>Unit Cost (USD)</label>
-                    <div class="value">$<?= number_format((float)$ticket['unit_cost'], 4) ?></div>
+                    <label>Line Items</label>
+                    <div class="value"><?= count($items) ?></div>
                 </div>
                 <div class="detail-item">
                     <label>Total Amount (USD)</label>
@@ -122,9 +129,52 @@ $error_flash    = isset($_GET['error'])    ? htmlspecialchars($_GET['error']) : 
 
             <?php if (!empty($ticket['description'])): ?>
                 <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
-                    <label style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);">Description / Reason for Scrap</label>
+                    <label style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);">General Notes / Reason for Scrap</label>
                     <p style="margin-top:4px;"><?= nl2br(htmlspecialchars($ticket['description'])) ?></p>
                 </div>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- ── Line Items ──────────────────────────── -->
+    <div class="card">
+        <div class="card-header"><h2>🧾 Part Numbers / Line Items (<?= count($items) ?>)</h2></div>
+        <div class="card-body" style="padding:0;">
+            <?php if (empty($items)): ?>
+                <p style="padding:20px;color:var(--muted);">No line items recorded for this ticket.</p>
+            <?php else: ?>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:40px;">#</th>
+                            <th>Part Number</th>
+                            <th>Description</th>
+                            <th style="text-align:right;">Qty</th>
+                            <th style="text-align:right;">Unit Cost</th>
+                            <th style="text-align:right;">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($items as $ix => $it): ?>
+                        <tr>
+                            <td><?= $ix + 1 ?></td>
+                            <td><strong><?= htmlspecialchars($it['part_number']) ?></strong></td>
+                            <td><?= $it['description'] !== null && $it['description'] !== '' ? nl2br(htmlspecialchars($it['description'])) : '<span style="color:var(--muted);">—</span>' ?></td>
+                            <td style="text-align:right;"><?= number_format((float)$it['qty'], 2) ?></td>
+                            <td style="text-align:right;">$<?= number_format((float)$it['unit_cost'], 4) ?></td>
+                            <td style="text-align:right;font-weight:600;">$<?= number_format((float)$it['amount'], 2) ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="5" style="text-align:right;font-weight:700;">Total (USD)</td>
+                            <td style="text-align:right;font-weight:700;color:var(--primary);">$<?= number_format((float)$ticket['amount'], 2) ?></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
             <?php endif; ?>
         </div>
     </div>

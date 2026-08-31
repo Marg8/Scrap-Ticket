@@ -88,4 +88,32 @@ function init_schema(PDO $pdo): void {
             ('Level 4 — VP / Plant Manager', 'VP',        10000.01, NULL,   4)
         ");
     }
+
+    // Line items — unlimited part numbers per ticket.
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS ticket_items (
+            id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            ticket_id      INT UNSIGNED NOT NULL,
+            part_number    VARCHAR(100) NOT NULL,
+            description    TEXT,
+            qty            DECIMAL(10,2) NOT NULL,
+            unit_cost      DECIMAL(12,4) NOT NULL,
+            amount         DECIMAL(14,2) NOT NULL,
+            CONSTRAINT fk_item_ticket FOREIGN KEY (ticket_id) REFERENCES scrap_tickets (id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    // One-time migration: the legacy single-item columns become optional.
+    $nullable = $pdo->query("
+        SELECT IS_NULLABLE FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'scrap_tickets' AND COLUMN_NAME = 'part_number'
+    ")->fetchColumn();
+    if ($nullable === 'NO') {
+        $pdo->exec("
+            ALTER TABLE scrap_tickets
+                MODIFY part_number VARCHAR(100)  NULL,
+                MODIFY qty         DECIMAL(10,2) NULL,
+                MODIFY unit_cost   DECIMAL(12,4) NULL
+        ");
+    }
 }

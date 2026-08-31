@@ -31,56 +31,103 @@ function get_required_doa_levels(PDO $pdo, float $amount): array {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $bu          = trim($_POST['bu']          ?? '');
-    $line        = trim($_POST['line']        ?? '');
-    $part_number = trim($_POST['part_number'] ?? '');
-    $description = trim($_POST['description'] ?? '');
-    $qty_raw     = trim($_POST['qty']         ?? '');
-    $unit_cost_raw = trim($_POST['unit_cost'] ?? '');
-    $created_by  = trim($_POST['created_by']  ?? '');
+    $bu         = trim($_POST['bu']         ?? '');
+    $line       = trim($_POST['line']       ?? '');
+    $notes      = trim($_POST['notes']      ?? '');
+    $created_by = trim($_POST['created_by'] ?? '');
 
-    // Validation
-    if ($bu === '')          $errors[] = 'Business Unit (BU) is required.';
-    if ($line === '')        $errors[] = 'Line is required.';
-    if ($part_number === '') $errors[] = 'Part Number is required.';
-    if ($created_by === '')  $errors[] = 'Created By (name) is required.';
+    // Line items arrive as parallel arrays (one entry per row).
+    $pn_arr   = (array) ($_POST['part_number'] ?? []);
+    $desc_arr = (array) ($_POST['item_desc']   ?? []);
+    $qty_arr  = (array) ($_POST['qty']         ?? []);
+    $uc_arr   = (array) ($_POST['unit_cost']   ?? []);
 
-    $qty = filter_var($qty_raw, FILTER_VALIDATE_FLOAT);
-    if ($qty === false || $qty <= 0) $errors[] = 'Qty must be a positive number.';
+    // Header validation
+    if ($bu === '')         $errors[] = 'Business Unit (BU) is required.';
+    if ($line === '')       $errors[] = 'Line is required.';
+    if ($created_by === '') $errors[] = 'Created By (name) is required.';
 
-    $unit_cost = filter_var($unit_cost_raw, FILTER_VALIDATE_FLOAT);
-    if ($unit_cost === false || $unit_cost < 0) $errors[] = 'Unit Cost must be a non-negative number.';
+    // Build & validate items, skipping fully-empty rows.
+    $items      = [];
+    $items_form = [];
+    $rowCount   = max(count($pn_arr), count($qty_arr), count($uc_arr), count($desc_arr));
+    for ($i = 0; $i < $rowCount; $i++) {
+        $pn   = trim((string) ($pn_arr[$i]   ?? ''));
+        $desc = trim((string) ($desc_arr[$i] ?? ''));
+        $qraw = trim((string) ($qty_arr[$i]  ?? ''));
+        $craw = trim((string) ($uc_arr[$i]   ?? ''));
+
+        if ($pn === '' && $desc === '' && $qraw === '' && $craw === '') {
+            continue; // ignore blank rows
+        }
+        $items_form[] = ['part_number' => $pn, 'item_desc' => $desc, 'qty_raw' => $qraw, 'unit_cost_raw' => $craw];
+
+        $rowNo = count($items_form);
+        if ($pn === '') $errors[] = "Item $rowNo: Part Number is required.";
+
+        $q = filter_var($qraw, FILTER_VALIDATE_FLOAT);
+        if ($q === false || $q <= 0) $errors[] = "Item $rowNo: Qty must be a positive number.";
+
+        $c = filter_var($craw, FILTER_VALIDATE_FLOAT);
+        if ($c === false || $c < 0) $errors[] = "Item $rowNo: Unit Cost must be a non-negative number.";
+
+        if ($pn !== '' && $q !== false && $q > 0 && $c !== false && $c >= 0) {
+            $items[] = [
+                'part_number' => substr($pn, 0, 100),
+                'description' => substr($desc, 0, 1000),
+                'qty'         => $q,
+                'unit_cost'   => $c,
+                'amount'      => round($q * $c, 2),
+            ];
+        }
+    }
+    if (empty($items)) $errors[] = 'Add at least one valid line item.';
 
     if (empty($errors)) {
-        $amount = round($qty * $unit_cost, 2);
+        $total = 0.0;
+        foreach ($items as $it) $total += $it['amount'];
+        $total = round($total, 2);
 
         $pdo = get_db();
         $pdo->beginTransaction();
         try {
             $ticket_number = generate_ticket_number($pdo);
 
-            // Insert ticket
+            // Insert ticket header (per-line fields now live in ticket_items).
             $stmt = $pdo->prepare("
                 INSERT INTO scrap_tickets
                     (ticket_number, bu, line, part_number, description, qty, unit_cost, amount, created_by)
                 VALUES
-                    (:tn, :bu, :line, :pn, :desc, :qty, :uc, :amount, :cb)
+                    (:tn, :bu, :line, NULL, :desc, NULL, NULL, :amount, :cb)
             ");
             $stmt->execute([
                 ':tn'     => $ticket_number,
                 ':bu'     => $bu,
                 ':line'   => $line,
-                ':pn'     => $part_number,
-                ':desc'   => $description,
-                ':qty'    => $qty,
-                ':uc'     => $unit_cost,
-                ':amount' => $amount,
+                ':desc'   => $notes !== '' ? $notes : null,
+                ':amount' => $total,
                 ':cb'     => $created_by,
             ]);
             $ticket_id = (int) $pdo->lastInsertId();
 
-            // Create pending approval rows based on DOA
-            $doa_levels = get_required_doa_levels($pdo, $amount);
+            // Insert line items.
+            $ins_item = $pdo->prepare("
+                INSERT INTO ticket_items (ticket_id, part_number, description, qty, unit_cost, amount)
+                VALUES (:tid, :pn, :desc, :qty, :uc, :amount)
+            ");
+            foreach ($items as $it) {
+                $ins_item->execute([
+                    ':tid'    => $ticket_id,
+                    ':pn'     => $it['part_number'],
+                    ':desc'   => $it['description'] !== '' ? $it['description'] : null,
+                    ':qty'    => $it['qty'],
+                    ':uc'     => $it['unit_cost'],
+                    ':amount' => $it['amount'],
+                ]);
+            }
+
+            // Create pending approval rows based on the ticket total.
+            $doa_levels = get_required_doa_levels($pdo, $total);
             $ins_approval = $pdo->prepare("
                 INSERT INTO approvals (ticket_id, doa_level_id, approver_role)
                 VALUES (:tid, :dlid, :role)
@@ -103,10 +150,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // Re-populate form values on error
-    $form = compact('bu','line','part_number','description','qty_raw','unit_cost_raw','created_by');
+    // Re-populate form values on error.
+    $form = compact('bu', 'line', 'notes', 'created_by');
+    if (empty($items_form)) {
+        $items_form[] = ['part_number' => '', 'item_desc' => '', 'qty_raw' => '', 'unit_cost_raw' => ''];
+    }
 } else {
-    $form = ['bu'=>'','line'=>'','part_number'=>'','description'=>'','qty_raw'=>'','unit_cost_raw'=>'','created_by'=>''];
+    $form = ['bu' => '', 'line' => '', 'notes' => '', 'created_by' => ''];
+    $items_form = [['part_number' => '', 'item_desc' => '', 'qty_raw' => '', 'unit_cost_raw' => '']];
 }
 ?>
 <!DOCTYPE html>
@@ -119,10 +170,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
 
-<nav class="navbar">
-    <a class="brand" href="index.php">🏷️ <?= htmlspecialchars(APP_NAME) ?></a>
-    <a class="nav-link" href="index.php">← Ticket List</a>
-</nav>
+<?php
+$active_page   = 'create';
+$page_subtitle = 'New Scrap Ticket';
+require __DIR__ . '/partials/header.php';
+?>
 
 <div class="container" style="max-width:760px;">
     <h1 class="page-title">New Scrap Ticket</h1>
@@ -159,45 +211,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
 
-                <!-- Row 2: Part Number -->
+                <!-- Line items (unlimited part numbers) -->
                 <div class="form-group">
-                    <label for="part_number">Part Number <span style="color:var(--danger)">*</span></label>
-                    <input type="text" id="part_number" name="part_number" class="form-control"
-                           maxlength="100" required
-                           value="<?= htmlspecialchars($form['part_number']) ?>"
-                           placeholder="e.g. ABC-12345">
+                    <label>Part Numbers / Line Items <span style="color:var(--danger)">*</span></label>
+                    <div class="excel-paste">
+                        <label for="excel_box" style="font-size:12px;color:var(--muted);">
+                            📋 Paste from Excel (columns: <strong>Part Number · Description · Qty · Unit Cost</strong>) then click “Load rows”.
+                        </label>
+                        <textarea id="excel_box" class="form-control" rows="3"
+                                  placeholder="ABC-123&#9;Broken housing&#9;10&#9;2.50&#10;XYZ-999&#9;Scrapped board&#9;5&#9;12.00"></textarea>
+                        <div style="display:flex;gap:8px;margin-top:6px;">
+                            <button type="button" id="load_rows" class="btn btn-secondary btn-sm">⬇ Load rows</button>
+                            <button type="button" id="clear_rows" class="btn btn-secondary btn-sm">Clear all</button>
+                        </div>
+                    </div>
+
+                    <div class="table-wrapper" style="margin-top:12px;">
+                        <table id="items_table">
+                            <thead>
+                                <tr>
+                                    <th style="width:22%;">Part Number *</th>
+                                    <th>Description</th>
+                                    <th style="width:110px;">Qty *</th>
+                                    <th style="width:130px;">Unit Cost *</th>
+                                    <th style="width:120px;text-align:right;">Amount</th>
+                                    <th style="width:44px;"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="items_body">
+                                <?php foreach ($items_form as $it): ?>
+                                <tr class="item-row">
+                                    <td><input type="text" name="part_number[]" class="form-control item-pn" maxlength="100"
+                                               value="<?= htmlspecialchars($it['part_number']) ?>" placeholder="ABC-12345"></td>
+                                    <td><input type="text" name="item_desc[]" class="form-control" maxlength="1000"
+                                               value="<?= htmlspecialchars($it['item_desc']) ?>" placeholder="Reason / defect…"></td>
+                                    <td><input type="number" name="qty[]" class="form-control item-qty" min="0.01" step="any"
+                                               value="<?= htmlspecialchars($it['qty_raw']) ?>" placeholder="0"></td>
+                                    <td><input type="number" name="unit_cost[]" class="form-control item-uc" min="0" step="any"
+                                               value="<?= htmlspecialchars($it['unit_cost_raw']) ?>" placeholder="0.00"></td>
+                                    <td class="item-amount" style="text-align:right;font-weight:600;">$0.00</td>
+                                    <td><button type="button" class="btn btn-danger btn-sm remove-row" title="Remove">✖</button></td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="4" style="text-align:right;font-weight:600;">Total (USD)</td>
+                                    <td id="grand_total" style="text-align:right;font-weight:700;color:var(--primary);">$0.00</td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    <button type="button" id="add_row" class="btn btn-secondary btn-sm" style="margin-top:8px;">+ Add row</button>
                 </div>
 
-                <!-- Description -->
+                <!-- General notes -->
                 <div class="form-group">
-                    <label for="description">Description / Reason for Scrap</label>
-                    <textarea id="description" name="description" class="form-control"
-                              rows="3" maxlength="1000"
-                              placeholder="Optional: describe the defect or reason…"><?= htmlspecialchars($form['description']) ?></textarea>
-                </div>
-
-                <!-- Row 3: Qty + Unit Cost + Amount (auto-calc) -->
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="qty">Quantity (Qty) <span style="color:var(--danger)">*</span></label>
-                        <input type="number" id="qty" name="qty" class="form-control"
-                               min="0.01" step="any" required
-                               value="<?= htmlspecialchars($form['qty_raw']) ?>"
-                               placeholder="0">
-                    </div>
-                    <div class="form-group">
-                        <label for="unit_cost">Unit Cost (USD) <span style="color:var(--danger)">*</span></label>
-                        <input type="number" id="unit_cost" name="unit_cost" class="form-control"
-                               min="0" step="any" required
-                               value="<?= htmlspecialchars($form['unit_cost_raw']) ?>"
-                               placeholder="0.00">
-                    </div>
-                    <div class="form-group">
-                        <label for="amount_preview">Amount (USD) — auto</label>
-                        <input type="text" id="amount_preview" class="form-control"
-                               readonly style="background:#f8f9fa;font-weight:600;"
-                               value="" placeholder="Qty × Unit Cost">
-                    </div>
+                    <label for="notes">General Notes / Reason (optional)</label>
+                    <textarea id="notes" name="notes" class="form-control"
+                              rows="2" maxlength="1000"
+                              placeholder="Optional notes that apply to the whole ticket…"><?= htmlspecialchars($form['notes']) ?></textarea>
                 </div>
 
                 <hr style="margin:16px 0;border-color:var(--border);">
@@ -261,19 +335,107 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <script>
 (function () {
-    const qtyEl  = document.getElementById('qty');
-    const ucEl   = document.getElementById('unit_cost');
-    const amtEl  = document.getElementById('amount_preview');
+    const body       = document.getElementById('items_body');
+    const grandTotal = document.getElementById('grand_total');
+    const money = n => '$' + (Number(n) || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const num   = v => parseFloat(String(v).replace(/[$,\s]/g, '')) || 0;
+    const looksNumeric = v => v !== '' && !isNaN(num(v));
 
     function recalc() {
-        const q  = parseFloat(qtyEl.value)  || 0;
-        const uc = parseFloat(ucEl.value)   || 0;
-        const a  = q * uc;
-        amtEl.value = a > 0 ? '$' + a.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '';
+        let total = 0;
+        body.querySelectorAll('.item-row').forEach(row => {
+            const amt = num(row.querySelector('.item-qty').value) * num(row.querySelector('.item-uc').value);
+            row.querySelector('.item-amount').textContent = money(amt);
+            total += amt;
+        });
+        grandTotal.textContent = money(total);
     }
 
-    qtyEl.addEventListener('input', recalc);
-    ucEl.addEventListener('input',  recalc);
+    function makeRow(pn = '', desc = '', qty = '', uc = '') {
+        const tr = document.createElement('tr');
+        tr.className = 'item-row';
+        tr.innerHTML =
+            '<td><input type="text" name="part_number[]" class="form-control item-pn" maxlength="100" placeholder="ABC-12345"></td>' +
+            '<td><input type="text" name="item_desc[]" class="form-control" maxlength="1000" placeholder="Reason / defect…"></td>' +
+            '<td><input type="number" name="qty[]" class="form-control item-qty" min="0.01" step="any" placeholder="0"></td>' +
+            '<td><input type="number" name="unit_cost[]" class="form-control item-uc" min="0" step="any" placeholder="0.00"></td>' +
+            '<td class="item-amount" style="text-align:right;font-weight:600;">$0.00</td>' +
+            '<td><button type="button" class="btn btn-danger btn-sm remove-row" title="Remove">✖</button></td>';
+        tr.querySelector('.item-pn').value = pn;
+        tr.querySelector('[name="item_desc[]"]').value = desc;
+        tr.querySelector('.item-qty').value = qty;
+        tr.querySelector('.item-uc').value  = uc;
+        body.appendChild(tr);
+        return tr;
+    }
+
+    function rowIsEmpty(row) {
+        return [...row.querySelectorAll('input')].every(i => i.value.trim() === '');
+    }
+
+    // Parse clipboard/Excel text into [pn, desc, qty, uc] tuples.
+    function parseClipboard(text) {
+        const out = [];
+        text.replace(/\r/g, '').split('\n').forEach(line => {
+            if (line.trim() === '') return;
+            let cols = (line.indexOf('\t') !== -1 ? line.split('\t') : line.split(/ {2,}|,/)).map(c => c.trim());
+            let pn = '', desc = '', qty = '', uc = '';
+            if (cols.length >= 4) {
+                [pn, desc, qty, uc] = cols;
+            } else if (cols.length === 3) {
+                if (looksNumeric(cols[1]) && looksNumeric(cols[2])) { pn = cols[0]; qty = cols[1]; uc = cols[2]; }
+                else { pn = cols[0]; desc = cols[1]; qty = cols[2]; }
+            } else if (cols.length === 2) {
+                pn = cols[0];
+                looksNumeric(cols[1]) ? (qty = cols[1]) : (desc = cols[1]);
+            } else {
+                pn = cols[0];
+            }
+            out.push([pn, desc, looksNumeric(qty) ? num(qty) : qty, looksNumeric(uc) ? num(uc) : uc]);
+        });
+        return out;
+    }
+
+    function loadRows(rows) {
+        if (!rows.length) return;
+        // Drop leading empty rows so pasted data replaces the blank starter row.
+        [...body.querySelectorAll('.item-row')].forEach(r => { if (rowIsEmpty(r)) r.remove(); });
+        rows.forEach(r => makeRow(r[0], r[1], r[2] === '' ? '' : r[2], r[3] === '' ? '' : r[3]));
+        if (!body.querySelector('.item-row')) makeRow();
+        recalc();
+    }
+
+    // Events
+    document.getElementById('add_row').addEventListener('click', () => { makeRow(); });
+    document.getElementById('load_rows').addEventListener('click', () => {
+        const box = document.getElementById('excel_box');
+        loadRows(parseClipboard(box.value));
+        box.value = '';
+    });
+    document.getElementById('clear_rows').addEventListener('click', () => {
+        body.innerHTML = '';
+        makeRow();
+        recalc();
+    });
+
+    body.addEventListener('input', recalc);
+    body.addEventListener('click', e => {
+        if (e.target.classList.contains('remove-row')) {
+            e.target.closest('.item-row').remove();
+            if (!body.querySelector('.item-row')) makeRow();
+            recalc();
+        }
+    });
+
+    // Paste multi-cell/multi-row Excel data directly into a Part Number cell.
+    body.addEventListener('paste', e => {
+        if (!e.target.classList.contains('item-pn')) return;
+        const text = (e.clipboardData || window.clipboardData).getData('text');
+        if (text.indexOf('\t') === -1 && text.indexOf('\n') === -1) return; // single value → default paste
+        e.preventDefault();
+        loadRows(parseClipboard(text));
+    });
+
     recalc();
 })();
 </script>

@@ -13,6 +13,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $pdo = get_db();
 
+// Truncate helper that works even when the mbstring extension is unavailable.
+function truncate_text(string $s, int $len): string {
+    return function_exists('mb_substr') ? mb_substr($s, 0, $len) : substr($s, 0, $len);
+}
+
 $approval_id   = isset($_POST['approval_id'])   ? (int) $_POST['approval_id']   : 0;
 $ticket_id     = isset($_POST['ticket_id'])     ? (int) $_POST['ticket_id']     : 0;
 $action        = isset($_POST['action'])        ? trim($_POST['action'])         : '';
@@ -21,9 +26,9 @@ $approver_role = isset($_POST['approver_role']) ? trim($_POST['approver_role']) 
 $comments      = isset($_POST['comments'])      ? trim($_POST['comments'])       : '';
 
 // Sanitize text inputs — strip tags and limit length
-$approver_name = mb_substr(strip_tags($approver_name), 0, 100);
-$approver_role = mb_substr(strip_tags($approver_role), 0, 100);
-$comments      = mb_substr(strip_tags($comments),      0, 1000);
+$approver_name = truncate_text(strip_tags($approver_name), 100);
+$approver_role = truncate_text(strip_tags($approver_role), 100);
+$comments      = truncate_text(strip_tags($comments),      1000);
 
 // Validate action
 if (!in_array($action, [ACTION_APPROVED, ACTION_REJECTED], true)) {

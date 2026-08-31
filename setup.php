@@ -42,6 +42,13 @@ try {
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
+
+<?php
+$active_page   = 'setup';
+$page_subtitle = 'Database Setup';
+require __DIR__ . '/partials/header.php';
+?>
+
 <div class="container" style="max-width:640px;margin-top:60px;">
     <div class="card">
         <div class="card-header">

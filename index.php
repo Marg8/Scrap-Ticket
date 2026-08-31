@@ -12,26 +12,34 @@ $where  = [];
 $params = [];
 
 if ($status_filter !== '') {
-    $where[]  = 'status = :status';
+    $where[]  = 't.status = :status';
     $params[':status'] = $status_filter;
 }
 if ($search !== '') {
-    $where[]  = '(ticket_number LIKE :s OR bu LIKE :s2 OR line LIKE :s3 OR part_number LIKE :s4 OR created_by LIKE :s5)';
+    $where[]  = '(t.ticket_number LIKE :s1 OR t.bu LIKE :s2 OR t.line LIKE :s3 OR t.created_by LIKE :s4 OR t.part_number LIKE :s5
+                  OR EXISTS (SELECT 1 FROM ticket_items ti WHERE ti.ticket_id = t.id AND ti.part_number LIKE :s6))';
     $like = '%' . $search . '%';
-    $params[':s']  = $like;
+    $params[':s1'] = $like;
     $params[':s2'] = $like;
     $params[':s3'] = $like;
     $params[':s4'] = $like;
     $params[':s5'] = $like;
+    $params[':s6'] = $like;
 }
 
 $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
 $stmt = $pdo->prepare("
-    SELECT id, ticket_number, bu, line, part_number, qty, unit_cost, amount, status, created_by, created_at
-    FROM scrap_tickets
+    SELECT t.id, t.ticket_number, t.bu, t.line, t.part_number AS legacy_part, t.qty AS legacy_qty,
+           t.amount, t.status, t.created_by, t.created_at,
+           COUNT(i.id)            AS item_count,
+           COALESCE(SUM(i.qty),0) AS total_qty,
+           MIN(i.part_number)     AS first_part
+    FROM scrap_tickets t
+    LEFT JOIN ticket_items i ON i.ticket_id = t.id
     $whereSql
-    ORDER BY created_at DESC
+    GROUP BY t.id, t.ticket_number, t.bu, t.line, t.part_number, t.qty, t.amount, t.status, t.created_by, t.created_at
+    ORDER BY t.created_at DESC
 ");
 $stmt->execute($params);
 $tickets = $stmt->fetchAll();
@@ -46,10 +54,11 @@ $tickets = $stmt->fetchAll();
 </head>
 <body>
 
-<nav class="navbar">
-    <a class="brand" href="index.php">🏷️ <?= htmlspecialchars(APP_NAME) ?></a>
-    <a class="nav-link" href="create_ticket.php">+ New Ticket</a>
-</nav>
+<?php
+$active_page   = 'index';
+$page_subtitle = 'Scrap Tickets';
+require __DIR__ . '/partials/header.php';
+?>
 
 <div class="container">
     <h1 class="page-title">Scrap Tickets</h1>
@@ -98,9 +107,8 @@ $tickets = $stmt->fetchAll();
                             <th>Ticket #</th>
                             <th>BU</th>
                             <th>Line</th>
-                            <th>Part Number</th>
-                            <th>Qty</th>
-                            <th>Unit Cost</th>
+                            <th>Part Numbers</th>
+                            <th>Total Qty</th>
                             <th>Amount (USD)</th>
                             <th>Status</th>
                             <th>Created By</th>
@@ -110,13 +118,25 @@ $tickets = $stmt->fetchAll();
                     </thead>
                     <tbody>
                         <?php foreach ($tickets as $t): ?>
+                        <?php
+                            $itemCount = (int) $t['item_count'];
+                            if ($itemCount > 0) {
+                                $partsLabel = htmlspecialchars((string) $t['first_part']);
+                                if ($itemCount > 1) {
+                                    $partsLabel .= ' <span style="color:var(--muted);">+' . ($itemCount - 1) . ' more</span>';
+                                }
+                                $qtyLabel = number_format((float) $t['total_qty'], 2);
+                            } else {
+                                $partsLabel = htmlspecialchars((string) $t['legacy_part']);
+                                $qtyLabel   = $t['legacy_qty'] !== null ? number_format((float) $t['legacy_qty'], 2) : '—';
+                            }
+                        ?>
                         <tr>
                             <td><strong><?= htmlspecialchars($t['ticket_number']) ?></strong></td>
                             <td><?= htmlspecialchars($t['bu']) ?></td>
                             <td><?= htmlspecialchars($t['line']) ?></td>
-                            <td><?= htmlspecialchars($t['part_number']) ?></td>
-                            <td><?= number_format((float)$t['qty'], 2) ?></td>
-                            <td>$<?= number_format((float)$t['unit_cost'], 4) ?></td>
+                            <td><?= $partsLabel !== '' ? $partsLabel : '<span style="color:var(--muted);">—</span>' ?></td>
+                            <td><?= $qtyLabel ?></td>
                             <td><strong>$<?= number_format((float)$t['amount'], 2) ?></strong></td>
                             <td><span class="badge badge-<?= htmlspecialchars($t['status']) ?>"><?= htmlspecialchars(str_replace('_',' ',$t['status'])) ?></span></td>
                             <td><?= htmlspecialchars($t['created_by']) ?></td>
