@@ -2,6 +2,7 @@
 /**
  * view_ticket.php — View a scrap ticket and its DOA approval chain.
  */
+require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/db.php';
 
 $pdo = get_db();

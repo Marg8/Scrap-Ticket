@@ -10,6 +10,11 @@
 $active_page   = $active_page   ?? '';
 $page_subtitle = $page_subtitle ?? '';
 
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+$current_user = $_SESSION['user']['displayName'] ?? ($_SESSION['user']['username'] ?? null);
+
 $menu = [
     'index'  => ['label' => 'Tickets',      'url' => 'index.php'],
     'create' => ['label' => 'Nuevo Ticket', 'url' => 'create_ticket.php'],
@@ -18,10 +23,14 @@ $menu = [
 ?>
 <header class="lf-header">
     <div class="lf-banner">
-        <span class="lf-welcome">Bienvenido [<b>Usuario</b>] SysAdministrator!</span>
+        <span class="lf-welcome">Bienvenido [<b><?= htmlspecialchars($current_user ?? 'Invitado') ?></b>]!</span>
         <span class="lf-accent">|</span>
         <a href="index.php" class="lf-banner-link">Inicio</a>
         <span class="lf-accent">|</span>
+        <?php if ($current_user !== null): ?>
+            <a href="login.php?logout=1" class="lf-banner-link">Cerrar sesión</a>
+            <span class="lf-accent">|</span>
+        <?php endif; ?>
     </div>
 
     <div class="lf-logobar">

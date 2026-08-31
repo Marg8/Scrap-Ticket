@@ -4,6 +4,7 @@
  * GET  → display blank form
  * POST → validate, save to DB, create pending approval rows, redirect to view page
  */
+require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/db.php';
 
 $errors  = [];

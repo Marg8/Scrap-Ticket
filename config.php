@@ -30,6 +30,16 @@ define('DB_PASS',    getenv('DB_PASS') !== false ? getenv('DB_PASS') : 'L3aNnM43
 define('DB_SOCKET',  getenv('DB_SOCKET')  ?: '');
 define('DB_CHARSET', 'utf8mb4');
 
+// ─────────────────────────────────────────────────────────────
+// Active Directory / LDAP  (autenticación de red On-Premises)
+// ─────────────────────────────────────────────────────────────
+$ldap_host   = getenv('LDAP_HOST') ?: 'IP_O_NOMBRE_DEL_SERVIDOR_AD'; // ej. 192.168.1.10 o ad.miempresa.local
+$ldap_port   = (int) (getenv('LDAP_PORT') ?: 389);                  // 389 = LDAP estándar, 636 = LDAPS
+$ldap_domain = getenv('LDAP_DOMAIN') ?: 'miempresa.local';          // Dominio de la empresa
+
+// Login de prueba sin AD (solo para desarrollo). Activar con DEMO_LOGIN=1 en .env.local
+define('DEMO_LOGIN', getenv('DEMO_LOGIN') === '1');
+
 // Application settings
 define('APP_NAME', 'Scrap Ticket System');
 define('APP_VERSION', '1.0.0');

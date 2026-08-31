@@ -3,6 +3,7 @@
  * approve_ticket.php — Process an approval or rejection action.
  * Accepts POST only. Redirects back to view_ticket.php after processing.
  */
+require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/config.php';
 
