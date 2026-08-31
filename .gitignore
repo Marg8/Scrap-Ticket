@@ -1,0 +1,2 @@
+# Local environment (contains credentials, do not commit)
+.env.local
