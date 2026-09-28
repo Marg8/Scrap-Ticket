@@ -1,2 +1,5 @@
 # Local environment (contains credentials, do not commit)
 .env.local
+
+# ⛔ ENTORNO MYSQL TEMPORAL — eliminar al "borrar el entorno mysql temporal"
+.env.temp

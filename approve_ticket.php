@@ -12,7 +12,15 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-$pdo = get_db();
+$pdo = get_db_or_null();
+if ($pdo === null) {
+    $ticket_id = isset($_POST['ticket_id']) ? (int) $_POST['ticket_id'] : 0;
+    $redirect  = $ticket_id > 0
+        ? 'view_ticket.php?id=' . $ticket_id . '&error=db_offline'
+        : 'index.php?error=db_offline';
+    header('Location: ' . $redirect);
+    exit;
+}
 
 // Truncate helper that works even when the mbstring extension is unavailable.
 function truncate_text(string $s, int $len): string {

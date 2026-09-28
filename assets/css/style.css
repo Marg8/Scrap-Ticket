@@ -228,6 +228,78 @@ tbody tr:hover { background: #eef8ef; }
 .alert-warning { background: #fff3cd; color: #856404; border: 1px solid #ffe69c; }
 .alert-info    { background: #cff4fc; color: #055160; border: 1px solid #b6effb; }
 
+/* ── Banner: sin conexión a base de datos ───────── */
+.db-offline-banner {
+    background: #f8d7da;
+    color: #721c24;
+    border-bottom: 1px solid #f5c2c7;
+    padding: 10px 20px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+/* ⛔ ENTORNO MYSQL TEMPORAL: banner; eliminar junto con .env.temp. */
+.temp-db-banner {
+    background: #cff4fc;
+    color: #055160;
+    border-bottom: 1px solid #b6effb;
+    padding: 8px 20px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+}
+.temp-db-switch {
+    display: inline-block;
+    margin-left: 10px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: #055160;
+    color: #fff;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 12px;
+}
+.temp-db-switch:hover { background: #033745; text-decoration: none; }
+
+/* ── Conmutador de rol (Ver como) para admins ───── */
+.lf-viewas {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    background: #eef5ef;
+    border-bottom: 1px solid var(--border);
+    padding: 6px 20px;
+    font-size: 12px;
+}
+.lf-viewas-label { font-weight: 700; color: var(--muted); }
+.lf-viewas-btn {
+    padding: 3px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: #fff;
+    color: var(--muted);
+    text-decoration: none;
+    font-weight: 600;
+}
+.lf-viewas-btn:hover { background: var(--light); text-decoration: none; }
+.lf-viewas-btn.active {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+}
+.lf-preview-banner {
+    background: #fff3cd;
+    color: #856404;
+    border-bottom: 1px solid #ffe69c;
+    padding: 8px 20px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+}
+.lf-preview-banner a { margin-left: 8px; }
+
 /* ── DOA / Approvals ────────────────────────────── */
 .approval-row {
     display: flex;

@@ -2,48 +2,52 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/db.php';
 
-$pdo = get_db();
+$pdo        = get_db_or_null();
+$db_offline = $pdo === null;
 
 // Filters
 $status_filter = isset($_GET['status']) && in_array($_GET['status'], [STATUS_PENDING, STATUS_APPROVED, STATUS_REJECTED, STATUS_PARTIALLY_APPROVED], true)
     ? $_GET['status'] : '';
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 
-$where  = [];
-$params = [];
+$tickets = [];
+if (!$db_offline) {
+    $where  = [];
+    $params = [];
 
-if ($status_filter !== '') {
-    $where[]  = 't.status = :status';
-    $params[':status'] = $status_filter;
+    if ($status_filter !== '') {
+        $where[]  = 't.status = :status';
+        $params[':status'] = $status_filter;
+    }
+    if ($search !== '') {
+        $where[]  = '(t.ticket_number LIKE :s1 OR t.bu LIKE :s2 OR t.line LIKE :s3 OR t.created_by LIKE :s4 OR t.part_number LIKE :s5
+                      OR EXISTS (SELECT 1 FROM ticket_items ti WHERE ti.ticket_id = t.id AND ti.part_number LIKE :s6))';
+        $like = '%' . $search . '%';
+        $params[':s1'] = $like;
+        $params[':s2'] = $like;
+        $params[':s3'] = $like;
+        $params[':s4'] = $like;
+        $params[':s5'] = $like;
+        $params[':s6'] = $like;
+    }
+
+    $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+
+    $stmt = $pdo->prepare("
+        SELECT t.id, t.ticket_number, t.bu, t.line, t.part_number AS legacy_part, t.qty AS legacy_qty,
+               t.amount, t.status, t.created_by, t.created_at,
+               COUNT(i.id)            AS item_count,
+               COALESCE(SUM(i.qty),0) AS total_qty,
+               MIN(i.part_number)     AS first_part
+        FROM scrap_tickets t
+        LEFT JOIN ticket_items i ON i.ticket_id = t.id
+        $whereSql
+        GROUP BY t.id, t.ticket_number, t.bu, t.line, t.part_number, t.qty, t.amount, t.status, t.created_by, t.created_at
+        ORDER BY t.created_at DESC
+    ");
+    $stmt->execute($params);
+    $tickets = $stmt->fetchAll();
 }
-if ($search !== '') {
-    $where[]  = '(t.ticket_number LIKE :s1 OR t.bu LIKE :s2 OR t.line LIKE :s3 OR t.created_by LIKE :s4 OR t.part_number LIKE :s5
-                  OR EXISTS (SELECT 1 FROM ticket_items ti WHERE ti.ticket_id = t.id AND ti.part_number LIKE :s6))';
-    $like = '%' . $search . '%';
-    $params[':s1'] = $like;
-    $params[':s2'] = $like;
-    $params[':s3'] = $like;
-    $params[':s4'] = $like;
-    $params[':s5'] = $like;
-    $params[':s6'] = $like;
-}
-
-$whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
-
-$stmt = $pdo->prepare("
-    SELECT t.id, t.ticket_number, t.bu, t.line, t.part_number AS legacy_part, t.qty AS legacy_qty,
-           t.amount, t.status, t.created_by, t.created_at,
-           COUNT(i.id)            AS item_count,
-           COALESCE(SUM(i.qty),0) AS total_qty,
-           MIN(i.part_number)     AS first_part
-    FROM scrap_tickets t
-    LEFT JOIN ticket_items i ON i.ticket_id = t.id
-    $whereSql
-    GROUP BY t.id, t.ticket_number, t.bu, t.line, t.part_number, t.qty, t.amount, t.status, t.created_by, t.created_at
-    ORDER BY t.created_at DESC
-");
-$stmt->execute($params);
-$tickets = $stmt->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -63,6 +67,10 @@ require __DIR__ . '/partials/header.php';
 
 <div class="container">
     <h1 class="page-title">Scrap Tickets</h1>
+
+    <?php if (($_GET['error'] ?? '') === 'forbidden'): ?>
+        <div class="alert alert-danger">No tienes permisos para acceder al panel de administración.</div>
+    <?php endif; ?>
 
     <!-- Filter / Search bar -->
     <div class="card">
@@ -98,7 +106,9 @@ require __DIR__ . '/partials/header.php';
             <a href="create_ticket.php" class="btn btn-primary btn-sm">+ New Ticket</a>
         </div>
         <div class="card-body" style="padding:0;">
-            <?php if (empty($tickets)): ?>
+            <?php if ($db_offline): ?>
+                <p style="padding:20px;color:var(--muted);">Sin conexión a la base de datos. No se pueden mostrar tickets.</p>
+            <?php elseif (empty($tickets)): ?>
                 <p style="padding:20px;color:var(--muted);">No tickets found. <a href="create_ticket.php">Create one</a>.</p>
             <?php else: ?>
             <div class="table-wrapper">

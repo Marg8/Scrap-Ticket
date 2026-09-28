@@ -29,12 +29,14 @@ if (isset($_GET['logout'])) {
 }
 
 // ── Modo demo (sin AD) — solo si está habilitado en config ──
+// Usa el correo del admin sembrado para que el rol se resuelva correctamente
+// mientras no hay acceso a LDAP (ver db.php → init_admin_schema).
 if (DEMO_LOGIN && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['demo'])) {
     session_regenerate_id(true);
     $_SESSION['user'] = [
-        'username'    => 'demo',
-        'displayName' => 'Usuario Demo',
-        'mail'        => 'demo@local.test',
+        'username'    => 'mrodriguez17',
+        'displayName' => 'Mrodriguez17',
+        'mail'        => 'mrodriguez17@littelfuse.com',
         'logged_at'   => date('Y-m-d H:i:s'),
         'demo'        => true,
     ];

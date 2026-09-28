@@ -5,7 +5,34 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/db.php';
 
-$pdo = get_db();
+$pdo        = get_db_or_null();
+$db_offline = $pdo === null;
+
+if ($db_offline) {
+    ?>
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Ticket — <?= htmlspecialchars(APP_NAME) ?></title>
+        <link rel="stylesheet" href="assets/css/style.css">
+    </head>
+    <body>
+    <?php
+    $active_page   = 'index';
+    $page_subtitle = 'Ticket';
+    require __DIR__ . '/partials/header.php';
+    ?>
+    <div class="container" style="max-width:860px;">
+        <p style="padding:20px;color:var(--muted);">Sin conexión a la base de datos. No se puede mostrar el ticket.</p>
+        <a href="index.php" class="btn btn-secondary">← Volver</a>
+    </div>
+    </body>
+    </html>
+    <?php
+    exit;
+}
 
 $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 if ($id <= 0) {

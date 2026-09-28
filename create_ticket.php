@@ -10,6 +10,9 @@ require_once __DIR__ . '/db.php';
 $errors  = [];
 $success = false;
 
+$pdo        = get_db_or_null();
+$db_offline = $pdo === null;
+
 // Helper: generate a unique ticket number  ST-YYYYMMDD-XXXX
 function generate_ticket_number(PDO $pdo): string {
     do {
@@ -32,16 +35,22 @@ function get_required_doa_levels(PDO $pdo, float $amount): array {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if ($db_offline) {
+        $errors[] = 'Sin conexión a la base de datos. No se procesará este ticket.';
+    }
+
     $bu         = trim($_POST['bu']         ?? '');
     $line       = trim($_POST['line']       ?? '');
     $notes      = trim($_POST['notes']      ?? '');
     $created_by = trim($_POST['created_by'] ?? '');
 
     // Line items arrive as parallel arrays (one entry per row).
-    $pn_arr   = (array) ($_POST['part_number'] ?? []);
-    $desc_arr = (array) ($_POST['item_desc']   ?? []);
-    $qty_arr  = (array) ($_POST['qty']         ?? []);
-    $uc_arr   = (array) ($_POST['unit_cost']   ?? []);
+    $pn_arr    = (array) ($_POST['part_number'] ?? []);
+    $desc_arr  = (array) ($_POST['item_desc']   ?? []);
+    $um_arr    = (array) ($_POST['um']          ?? []);
+    $qty_arr   = (array) ($_POST['qty']         ?? []);
+    $uc_arr    = (array) ($_POST['unit_cost']   ?? []);
+    $scrap_arr = (array) ($_POST['scrap_code']  ?? []);
 
     // Header validation
     if ($bu === '')         $errors[] = 'Business Unit (BU) is required.';
@@ -53,15 +62,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $items_form = [];
     $rowCount   = max(count($pn_arr), count($qty_arr), count($uc_arr), count($desc_arr));
     for ($i = 0; $i < $rowCount; $i++) {
-        $pn   = trim((string) ($pn_arr[$i]   ?? ''));
-        $desc = trim((string) ($desc_arr[$i] ?? ''));
-        $qraw = trim((string) ($qty_arr[$i]  ?? ''));
-        $craw = trim((string) ($uc_arr[$i]   ?? ''));
+        $pn    = trim((string) ($pn_arr[$i]    ?? ''));
+        $desc  = trim((string) ($desc_arr[$i]  ?? ''));
+        $um    = trim((string) ($um_arr[$i]    ?? ''));
+        $qraw  = trim((string) ($qty_arr[$i]   ?? ''));
+        $craw  = trim((string) ($uc_arr[$i]    ?? ''));
+        $scrap = trim((string) ($scrap_arr[$i] ?? ''));
 
         if ($pn === '' && $desc === '' && $qraw === '' && $craw === '') {
             continue; // ignore blank rows
         }
-        $items_form[] = ['part_number' => $pn, 'item_desc' => $desc, 'qty_raw' => $qraw, 'unit_cost_raw' => $craw];
+        $items_form[] = ['part_number' => $pn, 'item_desc' => $desc, 'um' => $um, 'qty_raw' => $qraw, 'unit_cost_raw' => $craw, 'scrap_code' => $scrap];
 
         $rowNo = count($items_form);
         if ($pn === '') $errors[] = "Item $rowNo: Part Number is required.";
@@ -76,9 +87,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $items[] = [
                 'part_number' => substr($pn, 0, 100),
                 'description' => substr($desc, 0, 1000),
+                'um'          => substr($um, 0, 20),
                 'qty'         => $q,
                 'unit_cost'   => $c,
                 'amount'      => round($q * $c, 2),
+                'scrap_code'  => substr($scrap, 0, 100),
             ];
         }
     }
@@ -89,7 +102,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         foreach ($items as $it) $total += $it['amount'];
         $total = round($total, 2);
 
-        $pdo = get_db();
         $pdo->beginTransaction();
         try {
             $ticket_number = generate_ticket_number($pdo);
@@ -113,17 +125,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Insert line items.
             $ins_item = $pdo->prepare("
-                INSERT INTO ticket_items (ticket_id, part_number, description, qty, unit_cost, amount)
-                VALUES (:tid, :pn, :desc, :qty, :uc, :amount)
+                INSERT INTO ticket_items (ticket_id, part_number, description, um, qty, unit_cost, amount, scrap_code)
+                VALUES (:tid, :pn, :desc, :um, :qty, :uc, :amount, :scrap)
             ");
             foreach ($items as $it) {
                 $ins_item->execute([
                     ':tid'    => $ticket_id,
                     ':pn'     => $it['part_number'],
                     ':desc'   => $it['description'] !== '' ? $it['description'] : null,
+                    ':um'     => $it['um'] !== '' ? $it['um'] : null,
                     ':qty'    => $it['qty'],
                     ':uc'     => $it['unit_cost'],
                     ':amount' => $it['amount'],
+                    ':scrap'  => $it['scrap_code'] !== '' ? $it['scrap_code'] : null,
                 ]);
             }
 
@@ -154,11 +168,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Re-populate form values on error.
     $form = compact('bu', 'line', 'notes', 'created_by');
     if (empty($items_form)) {
-        $items_form[] = ['part_number' => '', 'item_desc' => '', 'qty_raw' => '', 'unit_cost_raw' => ''];
+        $items_form[] = ['part_number' => '', 'item_desc' => '', 'um' => '', 'qty_raw' => '', 'unit_cost_raw' => '', 'scrap_code' => ''];
     }
 } else {
     $form = ['bu' => '', 'line' => '', 'notes' => '', 'created_by' => ''];
-    $items_form = [['part_number' => '', 'item_desc' => '', 'qty_raw' => '', 'unit_cost_raw' => '']];
+    $items_form = [];
+    for ($i = 0; $i < 8; $i++) {
+        $items_form[] = ['part_number' => '', 'item_desc' => '', 'um' => '', 'qty_raw' => '', 'unit_cost_raw' => '', 'scrap_code' => ''];
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -168,6 +185,197 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>New Scrap Ticket — <?= htmlspecialchars(APP_NAME) ?></title>
     <link rel="stylesheet" href="assets/css/style.css">
+    <style>
+        /* ---- Scrap sheet (Boleta de Desperdicio) layout ---- */
+        .scrap-sheet {
+            --sheet-line: #2f6b3a;
+            --sheet-head: #dcecdc;
+            --sheet-alt:  #eef6ef;
+            --sheet-brand:#1f7a34;
+            width: 100%;
+            max-width: 1180px;
+            margin: 18px auto;
+            background: #fff;
+            border: 1px solid var(--sheet-line);
+            color: #111;
+            font-size: 11px;
+            line-height: 1.2;
+        }
+        .scrap-sheet .sheet-title {
+            text-align: center;
+            font-weight: 700;
+            font-size: 13px;
+            letter-spacing: .3px;
+            padding: 5px;
+            background: var(--sheet-head);
+            border-bottom: 1px solid var(--sheet-line);
+            text-transform: uppercase;
+        }
+        .scrap-sheet table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        .scrap-sheet th,
+        .scrap-sheet td {
+            border: 1px solid var(--sheet-line);
+            padding: 2px 5px;
+            vertical-align: middle;
+            font-weight: 400;
+            text-align: center;
+            white-space: normal;
+            background: #fff;
+        }
+        .scrap-sheet .meta td { height: 30px; }
+        .scrap-sheet .logo { text-align: left; padding: 6px 8px; }
+        .scrap-sheet .logo img { height: 26px; display: block; margin-bottom: 3px; }
+        .scrap-sheet .logo .brand { display:block; font-size: 18px; font-weight: 800; color: var(--sheet-brand); letter-spacing:.2px; }
+        .scrap-sheet .logo .company { display:block; margin-top:2px; font-size: 10px; font-weight: 600; }
+        .scrap-sheet .meta-label { font-weight: 700; margin-right: 4px; }
+        .scrap-sheet .main th {
+            font-weight: 700;
+            height: 30px;
+            background: var(--sheet-head);
+        }
+        .scrap-sheet .main td { height: 24px; padding: 0; }
+        .scrap-sheet .rownum { width: 34px; }
+        .scrap-sheet .cell-input {
+            width: 100%;
+            border: 0;
+            background: transparent;
+            padding: 3px 5px;
+            font: inherit;
+            color: inherit;
+            text-align: inherit;
+            outline: none;
+        }
+        .scrap-sheet .cell-input:focus { background: #cfe6d1; }
+        .scrap-sheet td.num-cell { text-align: right; }
+        .scrap-sheet td.num-cell .cell-input { text-align: right; }
+        .scrap-sheet .item-amount { text-align: right; padding: 3px 5px; font-weight: 600; }
+        .scrap-sheet .row-del {
+            border: 0; background: transparent; color: #b00020;
+            cursor: pointer; font-size: 13px; line-height: 1; padding: 0;
+        }
+        .scrap-sheet tfoot td { font-weight: 700; height: 28px; background: var(--sheet-head); }
+        .scrap-sheet .totals-label { text-align: right; }
+        .scrap-sheet .approvals th { font-weight: 700; background: var(--sheet-head); }
+        .scrap-sheet .approvals .title-cell { text-align: left; font-weight: 700; }
+        .scrap-sheet .approvals .limit-cell { text-align: center; }
+        .scrap-sheet .sig-cell { height: 46px; }
+        .sheet-toolbar {
+            width: 100%;
+            max-width: 1180px;
+            margin: 0 auto 10px;
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+        }
+        .sheet-tools {
+            width: 100%;
+            max-width: 1180px;
+            margin: 10px auto 0;
+        }
+        .cell-input.is-invalid,
+        .form-control.is-invalid {
+            border: 1px solid #d32f2f !important;
+            background: #fff3f3 !important;
+            box-shadow: inset 0 0 0 1px rgba(211, 47, 47, 0.15);
+            color: #7f1d1d;
+        }
+        .scrap-cell {
+            padding: 0 !important;
+            background: #fff;
+            vertical-align: top;
+        }
+        .scrap-sheet .main { table-layout: auto; }
+        .scrap-sheet .main th,
+        .scrap-sheet .main td { white-space: nowrap; }
+        .scrap-group-header {
+            background: var(--sheet-head);
+            font-weight: 700;
+            padding: 0 !important;
+        }
+        .scrap-group-header .group-inner {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 4px 6px;
+        }
+        .scrap-group-header .add-scrap-col {
+            border: 1px solid var(--sheet-line);
+            background: #edf3ee;
+            color: #14532d;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 1px 6px;
+            cursor: pointer;
+            line-height: 1;
+        }
+        .scrap-code-header {
+            position: relative;
+            background: #d5e8d7 !important;
+            padding: 0 !important;
+            min-width: 80px;
+        }
+        .code-header-wrap {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            padding: 0 18px 0 4px;
+        }
+        .code-header-input {
+            width: 100%;
+            border: 0;
+            background: transparent;
+            text-align: center;
+            font: inherit;
+            font-weight: 700;
+            color: #111;
+            outline: none;
+            padding: 4px 6px;
+            box-sizing: border-box;
+            font-size: 11px;
+        }
+        .code-header-input::placeholder {
+            color: #466e49;
+            opacity: 1;
+        }
+        .code-header-input:focus { background: #cfe6d1; }
+        .remove-scrap-col {
+            position: absolute;
+            right: 2px;
+            top: 50%;
+            transform: translateY(-50%);
+            border: 0;
+            background: transparent;
+            color: #b00020;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            line-height: 1;
+            padding: 0 2px;
+        }
+        .code-qty-cell {
+            padding: 0 !important;
+            min-width: 70px;
+        }
+        .code-qty-input {
+            width: 100%;
+            border: 0;
+            background: transparent;
+            text-align: right;
+            font: inherit;
+            color: #111;
+            outline: none;
+            padding: 3px 6px;
+            box-sizing: border-box;
+        }
+        .code-qty-input:focus { background: #cfe6d1; }
+        @media (max-width: 1200px) {
+            .scrap-sheet { overflow-x: auto; }
+        }
+    </style>
 </head>
 <body>
 
@@ -177,8 +385,8 @@ $page_subtitle = 'New Scrap Ticket';
 require __DIR__ . '/partials/header.php';
 ?>
 
-<div class="container" style="max-width:760px;">
-    <h1 class="page-title">New Scrap Ticket</h1>
+<div class="container" style="max-width:1220px;">
+    <h1 class="page-title">Boleta de Desperdicio (Scrap)</h1>
 
     <?php if (!empty($errors)): ?>
         <div class="alert alert-danger">
@@ -189,184 +397,356 @@ require __DIR__ . '/partials/header.php';
         </div>
     <?php endif; ?>
 
-    <div class="card">
-        <div class="card-header"><h2>Ticket Information</h2></div>
-        <div class="card-body">
-            <form method="post" action="create_ticket.php" novalidate>
+    <form method="post" action="create_ticket.php" novalidate>
 
-                <!-- Row 1: BU + Line -->
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="bu">Business Unit (BU) <span style="color:var(--danger)">*</span></label>
-                        <input type="text" id="bu" name="bu" class="form-control"
-                               maxlength="100" required
-                               value="<?= htmlspecialchars($form['bu']) ?>"
-                               placeholder="e.g. Electronics, Plastics…">
-                    </div>
-                    <div class="form-group">
-                        <label for="line">Line <span style="color:var(--danger)">*</span></label>
-                        <input type="text" id="line" name="line" class="form-control"
-                               maxlength="100" required
-                               value="<?= htmlspecialchars($form['line']) ?>"
-                               placeholder="e.g. Line A, Line 3…">
-                    </div>
-                </div>
+        <div class="scrap-sheet">
+            <div class="sheet-title">Boleta de Desperdicio (Scrap)</div>
 
-                <!-- Line items (unlimited part numbers) -->
-                <div class="form-group">
-                    <label>Part Numbers / Line Items <span style="color:var(--danger)">*</span></label>
-                    <div class="excel-paste">
-                        <label for="excel_box" style="font-size:12px;color:var(--muted);">
-                            📋 Paste from Excel (columns: <strong>Part Number · Description · Qty · Unit Cost</strong>) then click “Load rows”.
-                        </label>
-                        <textarea id="excel_box" class="form-control" rows="3"
-                                  placeholder="ABC-123&#9;Broken housing&#9;10&#9;2.50&#10;XYZ-999&#9;Scrapped board&#9;5&#9;12.00"></textarea>
-                        <div style="display:flex;gap:8px;margin-top:6px;">
-                            <button type="button" id="load_rows" class="btn btn-secondary btn-sm">⬇ Load rows</button>
-                            <button type="button" id="clear_rows" class="btn btn-secondary btn-sm">Clear all</button>
-                        </div>
-                    </div>
+            <!-- Meta header -->
+            <table class="meta">
+                <colgroup>
+                    <col style="width:34%">
+                    <col style="width:18%">
+                    <col style="width:18%">
+                    <col style="width:14%">
+                    <col style="width:16%">
+                </colgroup>
+                <tr>
+                    <td class="logo" rowspan="2">
+                        <img src="assets/images/Littelfuse.png" alt="Littelfuse">
+                        <span class="brand">Littelfuse</span>
+                        <span class="company">Productos Electromecánicos BAC, S. de R.L. de C.V.</span>
+                    </td>
+                    <td>
+                        <span class="meta-label">Área:</span>
+                        <input type="text" name="bu" class="cell-input" maxlength="100"
+                               value="<?= htmlspecialchars($form['bu']) ?>" placeholder="Área / BU">
+                    </td>
+                    <td>
+                        <span class="meta-label">Responsable:</span>
+                        <input type="text" name="created_by" class="cell-input" maxlength="100"
+                               value="<?= htmlspecialchars($form['created_by']) ?>" placeholder="Responsable">
+                    </td>
+                    <td>
+                        <span class="meta-label">No Parte:</span>
+                        <input type="text" name="line" class="cell-input" maxlength="100"
+                               value="<?= htmlspecialchars($form['line']) ?>" placeholder="Línea / No. Parte">
+                    </td>
+                    <td>
+                        <span class="meta-label">Fecha:</span>
+                        <input type="text" class="cell-input" value="<?= htmlspecialchars(date('d-M-y')) ?>" readonly>
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="3"></td>
+                    <td><span class="meta-label">Folio:</span><em>Auto</em></td>
+                </tr>
+            </table>
 
-                    <div class="table-wrapper" style="margin-top:12px;">
-                        <table id="items_table">
-                            <thead>
-                                <tr>
-                                    <th style="width:22%;">Part Number *</th>
-                                    <th>Description</th>
-                                    <th style="width:110px;">Qty *</th>
-                                    <th style="width:130px;">Unit Cost *</th>
-                                    <th style="width:120px;text-align:right;">Amount</th>
-                                    <th style="width:44px;"></th>
-                                </tr>
-                            </thead>
-                            <tbody id="items_body">
-                                <?php foreach ($items_form as $it): ?>
-                                <tr class="item-row">
-                                    <td><input type="text" name="part_number[]" class="form-control item-pn" maxlength="100"
-                                               value="<?= htmlspecialchars($it['part_number']) ?>" placeholder="ABC-12345"></td>
-                                    <td><input type="text" name="item_desc[]" class="form-control" maxlength="1000"
-                                               value="<?= htmlspecialchars($it['item_desc']) ?>" placeholder="Reason / defect…"></td>
-                                    <td><input type="number" name="qty[]" class="form-control item-qty" min="0.01" step="any"
-                                               value="<?= htmlspecialchars($it['qty_raw']) ?>" placeholder="0"></td>
-                                    <td><input type="number" name="unit_cost[]" class="form-control item-uc" min="0" step="any"
-                                               value="<?= htmlspecialchars($it['unit_cost_raw']) ?>" placeholder="0.00"></td>
-                                    <td class="item-amount" style="text-align:right;font-weight:600;">$0.00</td>
-                                    <td><button type="button" class="btn btn-danger btn-sm remove-row" title="Remove">✖</button></td>
-                                </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                            <tfoot>
-                                <tr>
-                                    <td colspan="4" style="text-align:right;font-weight:600;">Total (USD)</td>
-                                    <td id="grand_total" style="text-align:right;font-weight:700;color:var(--primary);">$0.00</td>
-                                    <td></td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                    <button type="button" id="add_row" class="btn btn-secondary btn-sm" style="margin-top:8px;">+ Add row</button>
-                </div>
-
-                <!-- General notes -->
-                <div class="form-group">
-                    <label for="notes">General Notes / Reason (optional)</label>
-                    <textarea id="notes" name="notes" class="form-control"
-                              rows="2" maxlength="1000"
-                              placeholder="Optional notes that apply to the whole ticket…"><?= htmlspecialchars($form['notes']) ?></textarea>
-                </div>
-
-                <hr style="margin:16px 0;border-color:var(--border);">
-
-                <!-- Created by -->
-                <div class="form-group">
-                    <label for="created_by">Submitted By (Your Name) <span style="color:var(--danger)">*</span></label>
-                    <input type="text" id="created_by" name="created_by" class="form-control"
-                           maxlength="100" required
-                           value="<?= htmlspecialchars($form['created_by']) ?>"
-                           placeholder="Full name">
-                </div>
-
-                <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
-                    <a href="index.php" class="btn btn-secondary">Cancel</a>
-                    <button type="submit" class="btn btn-primary">Create Ticket</button>
-                </div>
-
-            </form>
-        </div>
-    </div>
-
-    <!-- DOA Info card -->
-    <div class="card">
-        <div class="card-header"><h3>📋 Approval Levels (DOA)</h3></div>
-        <div class="card-body" style="padding:0;">
-            <div class="table-wrapper">
-                <?php
-                $pdo_info = get_db();
-                $doa_all  = $pdo_info->query('SELECT * FROM doa_levels ORDER BY level_order')->fetchAll();
-                ?>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Level</th>
-                            <th>Approver Role</th>
-                            <th>Amount Range (USD)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    <?php foreach ($doa_all as $d): ?>
-                        <tr>
-                            <td><?= htmlspecialchars($d['level_name']) ?></td>
-                            <td><?= htmlspecialchars($d['approver_role']) ?></td>
-                            <td>
-                                $<?= number_format((float)$d['min_amount'], 2) ?>
-                                — <?= $d['max_amount'] !== null ? '$' . number_format((float)$d['max_amount'], 2) : 'No limit' ?>
-                            </td>
-                        </tr>
+            <!-- Main line-items table -->
+            <table class="main" id="items_table">
+                <colgroup>
+                    <col style="width:34px">
+                    <col style="width:120px">
+                    <col style="width:280px">
+                    <col style="width:56px">
+                    <col style="width:110px">
+                    <col style="width:110px">
+                    <col style="width:100px">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th rowspan="2">#</th>
+                        <th rowspan="2">Número de parte</th>
+                        <th rowspan="2">Descripción</th>
+                        <th rowspan="2">U/M</th>
+                        <th rowspan="2">Costo unitario</th>
+                        <th rowspan="2">Costo total</th>
+                        <th rowspan="2">Cantidad total</th>
+                        <th class="scrap-group-header" id="scrap_group_header" colspan="1">
+                            <div class="group-inner">
+                                <span>Código de Scrap</span>
+                                <button type="button" id="add_scrap_col" class="add-scrap-col" title="Agregar columna">+</button>
+                            </div>
+                        </th>
+                        <th rowspan="2"></th>
+                    </tr>
+                    <tr id="scrap_code_headers">
+                        <th class="scrap-code-header">
+                            <div class="code-header-wrap">
+                                <input type="text" class="code-header-input" maxlength="20" value="" placeholder="A10">
+                                <button type="button" class="remove-scrap-col" title="Eliminar columna">×</button>
+                            </div>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody id="items_body">
+                    <?php foreach ($items_form as $idx => $it): ?>
+                    <tr class="item-row">
+                        <td class="rownum"><?= $idx + 1 ?></td>
+                        <td><input type="text" name="part_number[]" class="cell-input item-pn" maxlength="100"
+                                   value="<?= htmlspecialchars($it['part_number']) ?>" placeholder="ABC-12345"></td>
+                        <td style="text-align:left;"><input type="text" name="item_desc[]" class="cell-input" maxlength="1000"
+                                   style="text-align:left;" value="<?= htmlspecialchars($it['item_desc']) ?>" placeholder="Descripción / defecto…"></td>
+                        <td><input type="text" name="um[]" class="cell-input item-um" maxlength="20"
+                                   value="<?= htmlspecialchars($it['um'] ?? '') ?>" placeholder="EA"></td>
+                        <td class="num-cell"><input type="number" name="unit_cost[]" class="cell-input item-uc" min="0" step="any"
+                                   value="<?= htmlspecialchars($it['unit_cost_raw']) ?>" placeholder="0.00"></td>
+                        <td class="item-amount">$0.00</td>
+                        <td class="num-cell"><input type="number" name="qty[]" class="cell-input item-qty" min="0" step="any"
+                                   value="<?= htmlspecialchars($it['qty_raw']) ?>" placeholder="0"></td>
+                        <td class="code-qty-cell">
+                            <input type="number" class="code-qty-input" min="0" step="any" value="" placeholder="">
+                        </td>
+                        <td><button type="button" class="row-del remove-row" title="Quitar">✖</button></td>
+                    </tr>
                     <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-            <p style="padding:10px 16px;font-size:12px;color:var(--muted);">
-                All levels whose <em>minimum amount</em> ≤ the ticket amount will be required to approve.
-            </p>
-        </div>
-    </div>
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="5" class="totals-label">Total</td>
+                        <td id="grand_total" class="item-amount">$0.00</td>
+                        <td id="grand_qty" class="num-cell" style="padding-right:5px;">0</td>
+                        <td id="tfoot_scrap_pad" colspan="1"></td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
 
+            <!-- Approvals footer -->
+            <table class="approvals">
+                <colgroup>
+                    <col style="width:22%">
+                    <col style="width:26%">
+                    <col style="width:14%">
+                    <col style="width:24%">
+                    <col style="width:14%">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th>Aprobador 1</th>
+                        <th>Límite de aprobaciones</th>
+                        <th>Firma Aprobador 1</th>
+                        <th>Aprobador 2</th>
+                        <th>Firma Aprobador 2</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="title-cell">Gerente de Operaciones</td>
+                        <td class="limit-cell">$0 - $2,500 USD</td>
+                        <td class="sig-cell"></td>
+                        <td class="title-cell">Contralor</td>
+                        <td class="sig-cell"></td>
+                    </tr>
+                    <tr>
+                        <td class="title-cell">Gerente de Planta</td>
+                        <td class="limit-cell">$2,501 - $15,000 USD</td>
+                        <td class="sig-cell"></td>
+                        <td class="title-cell">Contralor Regional de Ops.</td>
+                        <td class="sig-cell"></td>
+                    </tr>
+                    <tr>
+                        <td class="title-cell">Vicepresidente de unidad de negocio</td>
+                        <td class="limit-cell">Aprobar el total mensual del sitio</td>
+                        <td class="sig-cell"></td>
+                        <td class="title-cell"></td>
+                        <td class="sig-cell"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Tools: general notes + Excel paste + actions -->
+        <div class="sheet-tools">
+            <div class="excel-paste" style="margin-bottom:10px;">
+                <label for="excel_box" style="font-size:12px;color:var(--muted);">
+                    📋 Paste from Excel (columnas en el orden de la boleta: <strong>Número de parte · Descripción · U/M · Costo unitario · Cantidad total</strong>, opcional columnas de <strong>Código de Scrap</strong>) then click “Load rows”.
+                </label>
+                <textarea id="excel_box" class="form-control" rows="3"
+                          placeholder="ABC-123&#9;Broken housing&#9;EA&#9;2.50&#9;10&#9;1&#9;10&#9;20&#10;XYZ-999&#9;Scrapped board&#9;EA&#9;12.00&#9;5"></textarea>
+                <div style="display:flex;gap:8px;margin-top:6px;">
+                    <button type="button" id="add_row" class="btn btn-secondary btn-sm">+ Add row</button>
+                    <button type="button" id="load_rows" class="btn btn-secondary btn-sm">⬇ Load rows</button>
+                    <button type="button" id="clear_rows" class="btn btn-secondary btn-sm">Clear all</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="notes">General Notes / Reason (optional)</label>
+                <textarea id="notes" name="notes" class="form-control"
+                          rows="2" maxlength="1000"
+                          placeholder="Optional notes that apply to the whole ticket…"><?= htmlspecialchars($form['notes']) ?></textarea>
+            </div>
+
+            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;">
+                <a href="index.php" class="btn btn-secondary">Cancel</a>
+                <button type="submit" class="btn btn-primary">Create Ticket</button>
+            </div>
+        </div>
+
+    </form>
 </div>
 
 <script>
 (function () {
     const body       = document.getElementById('items_body');
     const grandTotal = document.getElementById('grand_total');
+    const grandQty   = document.getElementById('grand_qty');
+    const scrapGroup = document.getElementById('scrap_group_header');
+    const scrapCodeRow = document.getElementById('scrap_code_headers');
+    const tfootScrapPad = document.getElementById('tfoot_scrap_pad');
     const money = n => '$' + (Number(n) || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const qtyFmt = n => (Number(n) || 0).toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 3});
     const num   = v => parseFloat(String(v).replace(/[$,\s]/g, '')) || 0;
     const looksNumeric = v => v !== '' && !isNaN(num(v));
 
-    function recalc() {
-        let total = 0;
-        body.querySelectorAll('.item-row').forEach(row => {
-            const amt = num(row.querySelector('.item-qty').value) * num(row.querySelector('.item-uc').value);
-            row.querySelector('.item-amount').textContent = money(amt);
-            total += amt;
-        });
-        grandTotal.textContent = money(total);
+    function getScrapColCount() {
+        return scrapCodeRow.querySelectorAll('.scrap-code-header').length;
     }
 
-    function makeRow(pn = '', desc = '', qty = '', uc = '') {
+    function addScrapColumnGlobal() {
+        const th = document.createElement('th');
+        th.className = 'scrap-code-header';
+        th.innerHTML = '<div class="code-header-wrap"><input type="text" class="code-header-input" maxlength="20" value="" placeholder="A' + (getScrapColCount() + 10) + '"><button type="button" class="remove-scrap-col" title="Eliminar columna">×</button></div>';
+        scrapCodeRow.appendChild(th);
+
+        body.querySelectorAll('.item-row').forEach(row => {
+            const td = document.createElement('td');
+            td.className = 'code-qty-cell';
+            td.innerHTML = '<input type="number" class="code-qty-input" min="0" step="any" value="" placeholder="">';
+            const delCell = row.lastElementChild;
+            row.insertBefore(td, delCell);
+        });
+
+        const count = getScrapColCount();
+        scrapGroup.setAttribute('colspan', count);
+        tfootScrapPad.setAttribute('colspan', count);
+    }
+
+    function removeScrapColumnGlobal(button) {
+        const th = button.closest('.scrap-code-header');
+        if (!th) return;
+        if (getScrapColCount() <= 1) return;
+
+        const idx = Array.from(scrapCodeRow.querySelectorAll('.scrap-code-header')).indexOf(th);
+        if (idx === -1) return;
+
+        body.querySelectorAll('.item-row').forEach(row => {
+            const cells = row.querySelectorAll('.code-qty-cell');
+            if (cells[idx]) cells[idx].remove();
+        });
+
+        th.remove();
+
+        const count = getScrapColCount();
+        scrapGroup.setAttribute('colspan', count);
+        tfootScrapPad.setAttribute('colspan', count);
+        recalc();
+    }
+
+    function sumScrapQty(row) {
+        let total = 0;
+        row.querySelectorAll('.code-qty-input').forEach(input => {
+            total += num(input.value);
+        });
+        return total;
+    }
+
+    function markInvalid(field, invalid) {
+        if (!field) return;
+        field.classList.toggle('is-invalid', !!invalid);
+    }
+
+    function validateRequiredFields(showAlert = false) {
+        const headerFields = [
+            document.querySelector('input[name="bu"]'),
+            document.querySelector('input[name="line"]'),
+            document.querySelector('input[name="created_by"]')
+        ];
+
+        headerFields.forEach(field => {
+            markInvalid(field, !!field && field.value.trim() === '');
+        });
+
+        let hasInvalid = headerFields.some(field => !!field && field.value.trim() === '');
+
+        body.querySelectorAll('.item-row').forEach(row => {
+            const pn = row.querySelector('.item-pn');
+            const qty = row.querySelector('.item-qty');
+            const uc = row.querySelector('.item-uc');
+            const rowHasData = [pn, qty, uc].some(input => input && input.value.trim() !== '');
+
+            if (!rowHasData) {
+                markInvalid(pn, false);
+                markInvalid(qty, false);
+                markInvalid(uc, false);
+                return;
+            }
+
+            const rowInvalid = (pn && pn.value.trim() === '') || (qty && qty.value.trim() === '') || (uc && uc.value.trim() === '');
+            markInvalid(pn, !!pn && pn.value.trim() === '');
+            markInvalid(qty, !!qty && qty.value.trim() === '');
+            markInvalid(uc, !!uc && uc.value.trim() === '');
+
+            if (rowInvalid) hasInvalid = true;
+        });
+
+        if (showAlert && hasInvalid) {
+            const firstInvalid = document.querySelector('.is-invalid');
+            if (firstInvalid) firstInvalid.focus();
+        }
+
+        return !hasInvalid;
+    }
+
+    function renumber() {
+        body.querySelectorAll('.item-row').forEach((row, i) => {
+            row.querySelector('.rownum').textContent = i + 1;
+        });
+    }
+
+    function recalc() {
+        let total = 0, totalQty = 0;
+        body.querySelectorAll('.item-row').forEach(row => {
+            const qty = num(row.querySelector('.item-qty').value);
+            const scrapTotal = sumScrapQty(row);
+            const amt = (qty || scrapTotal) * num(row.querySelector('.item-uc').value);
+            row.querySelector('.item-amount').textContent = money(amt);
+            total += amt;
+            totalQty += qty || scrapTotal;
+        });
+        grandTotal.textContent = money(total);
+        grandQty.textContent   = qtyFmt(totalQty);
+        renumber();
+    }
+
+    function makeRow(pn = '', desc = '', qty = '', uc = '', um = '', scraps = []) {
         const tr = document.createElement('tr');
         tr.className = 'item-row';
+        const codeCols = getScrapColCount();
+        let codeCells = '';
+        for (let i = 0; i < codeCols; i++) {
+            codeCells += '<td class="code-qty-cell"><input type="number" class="code-qty-input" min="0" step="any" value="" placeholder=""></td>';
+        }
         tr.innerHTML =
-            '<td><input type="text" name="part_number[]" class="form-control item-pn" maxlength="100" placeholder="ABC-12345"></td>' +
-            '<td><input type="text" name="item_desc[]" class="form-control" maxlength="1000" placeholder="Reason / defect…"></td>' +
-            '<td><input type="number" name="qty[]" class="form-control item-qty" min="0.01" step="any" placeholder="0"></td>' +
-            '<td><input type="number" name="unit_cost[]" class="form-control item-uc" min="0" step="any" placeholder="0.00"></td>' +
-            '<td class="item-amount" style="text-align:right;font-weight:600;">$0.00</td>' +
-            '<td><button type="button" class="btn btn-danger btn-sm remove-row" title="Remove">✖</button></td>';
+            '<td class="rownum"></td>' +
+            '<td><input type="text" name="part_number[]" class="cell-input item-pn" maxlength="100" placeholder="ABC-12345"></td>' +
+            '<td style="text-align:left;"><input type="text" name="item_desc[]" class="cell-input" maxlength="1000" style="text-align:left;" placeholder="Descripción / defecto…"></td>' +
+            '<td><input type="text" name="um[]" class="cell-input item-um" maxlength="20" placeholder="EA"></td>' +
+            '<td class="num-cell"><input type="number" name="unit_cost[]" class="cell-input item-uc" min="0" step="any" placeholder="0.00"></td>' +
+            '<td class="item-amount">$0.00</td>' +
+            '<td class="num-cell"><input type="number" name="qty[]" class="cell-input item-qty" min="0" step="any" placeholder="0"></td>' +
+            codeCells +
+            '<td><button type="button" class="row-del remove-row" title="Quitar">✖</button></td>';
         tr.querySelector('.item-pn').value = pn;
         tr.querySelector('[name="item_desc[]"]').value = desc;
+        tr.querySelector('.item-um').value  = um;
         tr.querySelector('.item-qty').value = qty;
         tr.querySelector('.item-uc').value  = uc;
         body.appendChild(tr);
+        const codeInputs = tr.querySelectorAll('.code-qty-input');
+        (scraps || []).forEach((val, i) => { if (codeInputs[i] && val !== '' && val != null) codeInputs[i].value = val; });
         return tr;
     }
 
@@ -374,40 +754,57 @@ require __DIR__ . '/partials/header.php';
         return [...row.querySelectorAll('input')].every(i => i.value.trim() === '');
     }
 
-    // Parse clipboard/Excel text into [pn, desc, qty, uc] tuples.
+    // Parse clipboard/Excel text following the sheet (boleta) column order:
+    // Part Number · Description · U/M · Unit Cost · Qty · [Código de Scrap qty…].
+    // U/M and the Scrap Code quantity columns are optional.
     function parseClipboard(text) {
         const out = [];
         text.replace(/\r/g, '').split('\n').forEach(line => {
             if (line.trim() === '') return;
             let cols = (line.indexOf('\t') !== -1 ? line.split('\t') : line.split(/ {2,}|,/)).map(c => c.trim());
-            let pn = '', desc = '', qty = '', uc = '';
-            if (cols.length >= 4) {
-                [pn, desc, qty, uc] = cols;
+            let pn = '', desc = '', um = '', uc = '', qty = '', scraps = [];
+            if (cols.length >= 5) {
+                [pn, desc, um, uc, qty] = cols;
+                scraps = cols.slice(5);
+            } else if (cols.length === 4) {
+                [pn, desc, uc, qty] = cols;            // sin U/M
             } else if (cols.length === 3) {
-                if (looksNumeric(cols[1]) && looksNumeric(cols[2])) { pn = cols[0]; qty = cols[1]; uc = cols[2]; }
-                else { pn = cols[0]; desc = cols[1]; qty = cols[2]; }
+                [pn, desc, qty] = cols;
             } else if (cols.length === 2) {
                 pn = cols[0];
                 looksNumeric(cols[1]) ? (qty = cols[1]) : (desc = cols[1]);
             } else {
                 pn = cols[0];
             }
-            out.push([pn, desc, looksNumeric(qty) ? num(qty) : qty, looksNumeric(uc) ? num(uc) : uc]);
+            out.push({
+                pn, desc, um,
+                uc:  looksNumeric(uc)  ? num(uc)  : uc,
+                qty: looksNumeric(qty) ? num(qty) : qty,
+                scraps: scraps.map(s => (looksNumeric(s) ? num(s) : s))
+            });
         });
         return out;
     }
 
+    function ensureScrapColumns(n) {
+        while (getScrapColCount() < n) addScrapColumnGlobal();
+    }
+
     function loadRows(rows) {
         if (!rows.length) return;
+        // Add scrap-code columns first so pasted quantities land in the right cells.
+        const maxScraps = rows.reduce((m, r) => Math.max(m, (r.scraps || []).length), 0);
+        ensureScrapColumns(maxScraps);
         // Drop leading empty rows so pasted data replaces the blank starter row.
         [...body.querySelectorAll('.item-row')].forEach(r => { if (rowIsEmpty(r)) r.remove(); });
-        rows.forEach(r => makeRow(r[0], r[1], r[2] === '' ? '' : r[2], r[3] === '' ? '' : r[3]));
+        rows.forEach(r => makeRow(r.pn, r.desc, r.qty, r.uc, r.um, r.scraps));
         if (!body.querySelector('.item-row')) makeRow();
         recalc();
     }
 
     // Events
-    document.getElementById('add_row').addEventListener('click', () => { makeRow(); });
+    document.getElementById('add_row').addEventListener('click', () => { makeRow(); recalc(); });
+    document.getElementById('add_scrap_col').addEventListener('click', () => { addScrapColumnGlobal(); });
     document.getElementById('load_rows').addEventListener('click', () => {
         const box = document.getElementById('excel_box');
         loadRows(parseClipboard(box.value));
@@ -415,15 +812,37 @@ require __DIR__ . '/partials/header.php';
     });
     document.getElementById('clear_rows').addEventListener('click', () => {
         body.innerHTML = '';
-        makeRow();
+        for (let i = 0; i < 8; i++) makeRow();
         recalc();
     });
 
-    body.addEventListener('input', recalc);
+    document.querySelector('form').addEventListener('submit', function (event) {
+        const valid = validateRequiredFields(true);
+        if (!valid) {
+            event.preventDefault();
+        }
+    });
+
+    document.querySelectorAll('input[name="bu"], input[name="line"], input[name="created_by"]').forEach(input => {
+        input.addEventListener('input', () => {
+            markInvalid(input, input.value.trim() === '');
+        });
+    });
+
+    body.addEventListener('input', () => {
+        validateRequiredFields(false);
+        recalc();
+    });
+    scrapCodeRow.addEventListener('click', e => {
+        const removeCodeButton = e.target.closest('.remove-scrap-col');
+        if (removeCodeButton) removeScrapColumnGlobal(removeCodeButton);
+    });
+
     body.addEventListener('click', e => {
         if (e.target.classList.contains('remove-row')) {
             e.target.closest('.item-row').remove();
             if (!body.querySelector('.item-row')) makeRow();
+            validateRequiredFields(false);
             recalc();
         }
     });
@@ -436,6 +855,11 @@ require __DIR__ . '/partials/header.php';
         e.preventDefault();
         loadRows(parseClipboard(text));
     });
+
+    // Keep the form at 8 blank rows by default on first render.
+    if (!body.querySelector('.item-row')) {
+        for (let i = 0; i < 8; i++) makeRow();
+    }
 
     recalc();
 })();
